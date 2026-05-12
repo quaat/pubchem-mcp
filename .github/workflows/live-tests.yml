@@ -1,0 +1,48 @@
+name: Live PubChem tests
+
+# Runs live integration tests that actually hit pubchem.ncbi.nlm.nih.gov.
+# Manual trigger by default; optional weekly schedule. Never runs on PRs.
+# Conservative rate limits to be a good citizen of PubChem's API.
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '17 7 * * 1' # weekly, Monday 07:17 UTC
+
+concurrency:
+  group: live-tests-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  live:
+    name: Live PubChem integration
+    runs-on: ubuntu-latest
+    env:
+      PUBCHEM_MCP_LIVE_TESTS: '1'
+      PUBCHEM_RPS: '1'
+      PUBCHEM_RPM: '30'
+      PUBCHEM_TIMEOUT_MS: '30000'
+      PUBCHEM_MAX_RETRIES: '2'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Setup Node 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - name: Install (npm ci)
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      - name: Run live integration tests only
+        run: npx vitest run test/integration/live.test.ts
