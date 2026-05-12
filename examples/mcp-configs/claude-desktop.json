@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "pubchem": {
+      "command": "npx",
+      "args": ["-y", "pubchem-mcp"],
+      "env": {
+        "PUBCHEM_LOG_LEVEL": "info"
+      }
+    }
+  }
+}
