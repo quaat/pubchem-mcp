@@ -28,5 +28,12 @@ export default tseslint.config(
       'no-console': 'off',
     },
   },
+  {
+    // CLI helper scripts: `console.log` is the user-facing output channel.
+    files: ['scripts/**/*.mjs'],
+    rules: {
+      'no-console': 'off',
+    },
+  },
   prettier,
 );

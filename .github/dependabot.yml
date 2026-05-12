@@ -1,0 +1,54 @@
+version: 2
+
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: '07:30'
+      timezone: 'Europe/Oslo'
+    open-pull-requests-limit: 10
+    versioning-strategy: increase-if-necessary
+    labels: ['dependencies', 'npm']
+    commit-message:
+      prefix: deps
+      include: scope
+    groups:
+      # Group minor/patch bumps to reduce PR churn. Majors stay as individual
+      # PRs because they often require code changes.
+      runtime-minor-patch:
+        applies-to: version-updates
+        dependency-type: production
+        update-types:
+          - minor
+          - patch
+      dev-minor-patch:
+        applies-to: version-updates
+        dependency-type: development
+        update-types:
+          - minor
+          - patch
+      security:
+        applies-to: security-updates
+        patterns:
+          - '*'
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: '07:45'
+      timezone: 'Europe/Oslo'
+    open-pull-requests-limit: 5
+    labels: ['dependencies', 'github-actions']
+    commit-message:
+      prefix: ci
+      include: scope
+    groups:
+      actions-minor-patch:
+        applies-to: version-updates
+        update-types:
+          - minor
+          - patch

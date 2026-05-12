@@ -1,0 +1,104 @@
+name: Publish to npm (Trusted Publishing / OIDC)
+
+# Publishes pubchem-mcp to the public npm registry using npm Trusted Publishing
+# (OIDC). No long-lived NPM_TOKEN is used.
+#
+# Safety properties (also enforced by the steps below):
+#   - publishes ONLY from tag pushes matching v*.*.*  (no workflow_dispatch,
+#     no branch pushes, no PRs)
+#   - refuses v0.1.0 (already published manually)
+#   - refuses tag/version mismatch
+#   - human approval is gated by the `npm-publish` GitHub Environment, NOT
+#     by `workflow_dispatch` inputs — which means a maintainer cannot
+#     side-step the tag-version match guard by clicking "Run workflow" from
+#     a branch
+#   - package-manager cache is intentionally disabled
+
+on:
+  push:
+    tags: ['v*.*.*']
+
+concurrency:
+  group: publish-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  publish:
+    name: Publish to npm
+    runs-on: ubuntu-latest
+    environment: npm-publish
+
+    steps:
+      - name: Refuse non-tag refs (defense in depth)
+        # `on: push.tags` already filters this, but a future edit to the
+        # trigger block must not silently weaken the contract.
+        if: ${{ github.ref_type != 'tag' }}
+        run: |
+          echo "Publish workflow refused: github.ref_type is '${{ github.ref_type }}', expected 'tag'." >&2
+          exit 1
+
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Setup Node 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          registry-url: 'https://registry.npmjs.org'
+          # Trusted Publishing release builds intentionally do not cache deps.
+
+      - name: Print Node and npm versions
+        run: |
+          node --version
+          npm --version
+
+      - name: Upgrade npm to a Trusted-Publishing-capable version
+        # Trusted Publishing requires npm >= 11.5.1. Setup-node may install a
+        # slightly older npm; upgrade in-place to be safe.
+        run: |
+          npm install -g npm@latest
+          npm --version
+
+      - name: Install (npm ci)
+        run: npm ci
+
+      - name: Package metadata sanity (publish mode — refuses 0.1.0)
+        run: npm run check:metadata -- --publish
+
+      - name: Tag/version match (publish mode — refuses 0.1.0 and non-tag runs)
+        # Always runs; not conditional on event_name. The job only runs on
+        # tag pushes (see `on:` and the `ref_type` guard above), and this
+        # script will also fail-fast on any non-tag ref.
+        run: npm run check:version-tag -- --publish
+
+      - name: Build
+        run: npm run build
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Test (mocked; no live PubChem calls)
+        env:
+          PUBCHEM_MCP_LIVE_TESTS: ''
+        run: npm test
+
+      - name: Production audit
+        run: npm audit --omit=dev
+
+      - name: Pack (dry-run)
+        run: npm pack --dry-run
+
+      - name: Publish (Trusted Publishing / OIDC)
+        # No NODE_AUTH_TOKEN, no NPM_TOKEN. The OIDC token from id-token: write
+        # is exchanged by npm for an ephemeral publish credential bound to the
+        # configured Trusted Publisher.
+        run: npm publish --access public

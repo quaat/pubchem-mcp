@@ -34,7 +34,8 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
-    }
+    },
+    "./package.json": "./package.json"
   },
   "bin": {
     "pubchem-mcp": "./bin/pubchem-mcp"
@@ -56,7 +57,11 @@
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "start": "node dist/index.js",
-    "prepublishOnly": "npm run build"
+    "prepublishOnly": "npm run build",
+    "check:metadata": "node scripts/check-package-metadata.mjs",
+    "check:version-tag": "node scripts/check-version-tag.mjs",
+    "smoke:mcp": "node scripts/smoke-mcp-stdio.mjs",
+    "smoke:package": "node scripts/smoke-packed-package.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",

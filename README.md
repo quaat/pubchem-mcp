@@ -178,6 +178,15 @@ See [`docs/safety-and-limitations.md`](docs/safety-and-limitations.md).
 - **No data returned for a compound annotation heading** — PubChem may not have that section for that compound. The server will not fabricate one.
 - **Live test failures when network is unavailable** — transport failures (DNS, TLS, refused, reset, timeout) are mapped to a typed `PubChemTransientError` and surface in MCP tool payloads as `{ "category": "transient", "retryable": true, "endpoint": "...", "error": "Network error while contacting PubChem (ENOTFOUND)" | "PubChem request timed out after Nms" }`. The live test suite uses a short timeout (10 s) and a low retry cap (2) so the suite completes within ~60 s on hosts without HTTPS to `pubchem.ncbi.nlm.nih.gov`, and every test closes its MCP client+server transports in `finally`. Leave `PUBCHEM_MCP_LIVE_TESTS` unset on offline hosts.
 
+## CI/CD and releases
+
+This repository uses GitHub Actions for CI, release validation, and npm publishing via Trusted Publishing (OIDC). Future versions (`0.1.1` onwards) publish through `.github/workflows/publish.yml`; no long-lived `NPM_TOKEN` is used. Version `0.1.0` was published manually before this pipeline existed and the workflow refuses to republish it.
+
+- Pipeline overview, Trusted Publisher setup, `npm-publish` environment configuration: [`docs/ci-cd.md`](docs/ci-cd.md)
+- Per-release runbook (bump → tag → approve → verify): [`docs/release-checklist.md`](docs/release-checklist.md)
+- Publish gates, metadata requirements, rollback policy: [`PUBLISHING.md`](PUBLISHING.md)
+- Changelog: [`CHANGELOG.md`](CHANGELOG.md)
+
 ## License
 
 [MIT](LICENSE)

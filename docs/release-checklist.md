@@ -2,132 +2,118 @@
 
 Run these steps before tagging and publishing a new version of `pubchem-mcp`.
 
-## Pre-flight
+> `0.1.0` was published manually on 2026-05-12. **Do not republish 0.1.0.**
+> Future versions start at `0.1.1` and are published through GitHub Actions
+> using npm Trusted Publishing (see [`docs/ci-cd.md`](ci-cd.md)).
+
+## 1. Pre-flight
 
 - [ ] Working tree is clean (`git status` shows no uncommitted changes).
-- [ ] Replace every `TODO-*` placeholder in `package.json` (`author`, `repository.url`, `homepage`, `bugs.url`) — see [`PUBLISHING.md`](../PUBLISHING.md).
-- [ ] Update `version` in `package.json` per semver (`major.minor.patch`).
-  - `src/version.ts` reads from `package.json` at runtime, so no separate constant to update.
-- [ ] Update `CHANGELOG.md` with user-facing changes for this version.
-- [ ] Confirm the npm name is free or owned by you:
-  ```bash
-  npm view pubchem-mcp --registry=https://registry.npmjs.org/
-  ```
+- [ ] `package.json` metadata is correct (`author`, `repository.url`, `homepage`, `bugs.url`).
+- [ ] Confirm the npm Trusted Publisher is still configured: package `pubchem-mcp`, repo `quaat/pubchem-mcp`, workflow `publish.yml`, environment `npm-publish`. (Only needed once; recheck after any owner/repo change.)
+- [ ] Decide the next version per semver:
+  - `npm version patch` — bugfixes/docs
+  - `npm version minor` — backward-compatible features
+  - `npm version major` — breaking changes
 
-## Build & static checks
+  This will edit `package.json`, create a commit, and create a tag. **Do not** use it to re-create `v0.1.0`.
+- [ ] Add a CHANGELOG entry for the new version under `[X.Y.Z]`.
+
+## 2. Local verification
+
+Run from a clean clone:
 
 ```bash
 rm -rf node_modules dist
 npm ci
+npm run check:metadata
 npm run build
 npm run typecheck
 npm run lint
-```
-
-All four must succeed with zero errors.
-
-## Tests
-
-```bash
 npm test
+npm audit --omit=dev
+npm audit
+npm pack --dry-run
+npm pack
+npm run smoke:package -- ./pubchem-mcp-*.tgz
 ```
 
-Expected: all unit and mocked-MCP-integration tests pass; live tests are skipped because `PUBCHEM_MCP_LIVE_TESTS` is unset.
+All must succeed. The packed-tarball smoke confirms:
 
-### Required prepublish: live tests + controlled failure check
+- `node_modules/.bin/pubchem-mcp` is installed,
+- `require('pubchem-mcp/package.json').version` works under Node's exports,
+- the MCP `initialize` and `tools/list` handshake succeed without contacting PubChem.
 
-Run live tests from a **network-capable environment**:
+`npm run smoke:package` requires network access to the npm registry because
+it runs `npm install <tgz>` in a clean temp project — that install resolves
+and downloads the package's runtime dependencies. The step has bounded
+timeouts (`npm init` 30 s, `npm install` 120 s, require check 30 s, MCP smoke
+30 s) and fails fast with a structured diagnostic rather than hanging when
+the registry is unreachable. Set `KEEP_SMOKE_DIR=1` to inspect the temp dir
+after a failure.
+
+## 3. Optional: live tests
+
+If a network-capable shell is handy:
 
 ```bash
 PUBCHEM_MCP_LIVE_TESTS=1 npm test
 ```
 
-All live tests must pass. The suite should complete in well under a minute when network is reachable.
+Or run **Actions → Live PubChem tests → Run workflow** in GitHub.
 
-Verify the transport-error contract with one **controlled network-failure run**:
+Sanity-check the transport-error contract by pointing at a deliberately bogus
+host and confirming every test surfaces `category: "transient"` within a few
+seconds:
 
 ```bash
-# Force every outbound call to fail with a DNS error. The live suite should
-# still complete promptly (≤ ~60s) and each live test should produce a
-# diagnostic message containing `"category": "transient"`.
-PUBCHEM_MCP_LIVE_TESTS=1 PUBCHEM_BASE_URL=https://pubchem.invalid/rest/pug \
+PUBCHEM_MCP_LIVE_TESTS=1 \
+  PUBCHEM_BASE_URL=https://pubchem.invalid/rest/pug \
   PUBCHEM_VIEW_BASE_URL=https://pubchem.invalid/rest/pug_view \
-  npm test 2>&1 | tee /tmp/pubchem-live-failmode.log
-
-# Confirm we got typed transient errors (not raw fetch failures):
-grep -c '"category": "transient"' /tmp/pubchem-live-failmode.log
+  npx vitest run test/integration/live.test.ts 2>&1 | tee /tmp/pubchem-failmode.log
+grep -c '"category": "transient"' /tmp/pubchem-failmode.log
 ```
 
-If live tests fail with `MCP tool error` payloads when network *is* available, the diagnostic message includes the full error response — typically a 503, a DNS failure, or a rate-limit hit. Re-run after the apparent cause resolves; do not silence the gate.
-
-## Audit
+## 4. Tag and push
 
 ```bash
-npm audit --omit=dev   # must be clean
-npm audit              # should be clean for a publishable release
+git push                   # main
+git push --tags            # vX.Y.Z
 ```
 
-If `npm audit` reports a dev-only vulnerability we cannot upgrade past in this release, document the source, severity, dev-only status, impact, mitigation, and follow-up in `docs/release-risk-register.md` and decide explicitly whether to proceed.
+Pushing the tag triggers `release-check.yml` and `publish.yml` in parallel.
 
-## Pack dry-run
+## 5. Approve the publish
 
-```bash
-npm pack --dry-run
-```
+GitHub UI → **Actions → Publish to npm → Review deployments** for the
+`npm-publish` environment. A maintainer must approve before the publish step
+can run.
 
-Confirm the tarball contents include:
+> The publish workflow has **no manual dispatch button**. A tag push is the
+> only way to start it, and the `npm-publish` environment approval is the
+> only human gate. This prevents anyone from clicking "Run workflow" from a
+> branch and side-stepping the tag/version match guard.
 
-- `dist/**` (build output)
-- `bin/pubchem-mcp` (executable shim)
-- `README.md`, `LICENSE`
-- `docs/**`
-- `examples/**`
+## 6. Verify
 
-And do **not** include:
+- [ ] <https://www.npmjs.com/package/pubchem-mcp> shows the new version with provenance.
+- [ ] Provenance is visible (npm's "Built and signed on GitHub Actions" badge for eligible public packages).
+- [ ] From a clean directory:
+  ```bash
+  cd "$(mktemp -d)" && npm init -y
+  npm install pubchem-mcp@<NEW-VERSION>
+  cat <<'EOF' | PUBCHEM_LOG_LEVEL=silent npx pubchem-mcp
+  {"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"smoke","version":"0"}}}
+  {"jsonrpc":"2.0","method":"notifications/initialized"}
+  {"jsonrpc":"2.0","id":2,"method":"tools/list"}
+  EOF
+  ```
+- [ ] `git tag v<NEW-VERSION>` is on `origin`.
+- [ ] CHANGELOG and any GitHub Release notes match the published version.
 
-- `node_modules/`
-- `test/`
-- `*.test.ts` files
-- `.env`, `.env.local`
+## 7. Rollback
 
-The `files` field in `package.json` controls this — review when changing source layout.
+If a critical bug is found post-publish:
 
-## Package metadata
-
-- [ ] Confirm `npm view pubchem-mcp` (a) returns the previous version if this is a re-publish, or (b) returns 404 (not yet published) for the first release. If the name is taken by someone else, stop and pick a new name.
-- [ ] Confirm `package.json` `name`, `version`, `bin`, `files`, `engines`, `license` are correct.
-- [ ] Confirm `package.json` `repository`, `homepage`, `bugs` URLs point to the public repo (set these before first publish).
-
-## Smoke test the built binary
-
-```bash
-cat <<'EOF' | PUBCHEM_LOG_LEVEL=silent node dist/index.js
-{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"smoke","version":"0"}}}
-{"jsonrpc":"2.0","method":"notifications/initialized"}
-{"jsonrpc":"2.0","id":2,"method":"tools/list"}
-EOF
-```
-
-Expected: a JSON-RPC `initialize` result, then a `tools/list` result containing all 10 tools.
-
-## Publish
-
-```bash
-npm publish --access public
-```
-
-(Drop `--access public` for scoped packages with a paid private plan if applicable. Unscoped packages publish public by default.)
-
-After publish:
-
-- [ ] `git tag vX.Y.Z` and push the tag.
-- [ ] Create a GitHub Release with the changelog excerpt.
-- [ ] Smoke-test from a clean directory: `npx pubchem-mcp@<version>` and verify it starts.
-
-## Rollback
-
-If a critical bug is discovered post-publish:
-
-- Patch the bug, bump the version, and republish.
-- Do **not** `npm unpublish` once a version has been live for more than 72h (npm policy and ecosystem impact).
-- Consider `npm deprecate pubchem-mcp@<bad-version> '...'` to warn installs of the broken version.
+- Patch and republish; **do not** `npm unpublish` after 72 hours (npm policy + ecosystem impact).
+- Consider `npm deprecate pubchem-mcp@<bad-version> "<reason>"` to warn users of the broken version.

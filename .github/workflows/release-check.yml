@@ -1,0 +1,91 @@
+name: Release check
+
+# Validate a release candidate end-to-end: full local gates, build a tarball,
+# install it in a clean directory, and smoke the installed binary over stdio.
+# Runs on tag pushes and on PRs that touch release-relevant files. Does NOT
+# publish.
+
+on:
+  push:
+    tags: ['v*.*.*']
+  pull_request:
+    paths:
+      - 'package.json'
+      - 'package-lock.json'
+      - 'tsconfig*.json'
+      - 'src/**'
+      - 'bin/**'
+      - 'scripts/**'
+      - '.github/workflows/release-check.yml'
+      - '.github/workflows/publish.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: release-check-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  release-check:
+    name: Release candidate validation
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Setup Node 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - name: Install (npm ci)
+        run: npm ci
+
+      - name: Package metadata sanity
+        run: npm run check:metadata
+
+      - name: Tag/version match (informational outside publish)
+        # Strict in tag context; warns otherwise.
+        run: npm run check:version-tag
+
+      - name: Build
+        run: npm run build
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Test (mocked; no live PubChem calls)
+        env:
+          PUBCHEM_MCP_LIVE_TESTS: ''
+        run: npm test
+
+      - name: Production audit
+        run: npm audit --omit=dev
+
+      - name: Full audit
+        run: npm audit
+
+      - name: Pack (dry-run)
+        run: npm pack --dry-run
+
+      - name: Pack
+        run: npm pack
+
+      - name: Packed tarball smoke (clean install + MCP stdio)
+        run: npm run smoke:package
+
+      - name: Upload tarball artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: pubchem-mcp-tarball
+          path: pubchem-mcp-*.tgz
+          retention-days: 7
+          if-no-files-found: error
