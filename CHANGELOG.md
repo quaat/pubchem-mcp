@@ -6,6 +6,57 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) 
 
 ## [Unreleased]
 
+## [0.1.1] — 2026-05-13
+
+### Fixed
+
+- **PubChem SMILES property rename compatibility.** PubChem PUG-REST renamed
+  the SMILES property keys in the response payload — `IsomericSMILES` is now
+  served as `SMILES` and `CanonicalSMILES` is now served as
+  `ConnectivitySMILES`. The previous release requested the legacy names in
+  the URL, PubChem accepted them, but the response was keyed under the new
+  names. The result was that `resolve_compound`, `get_compound`, and
+  `get_compound_structure({ format: 'smiles' })` returned `undefined` for
+  the SMILES fields against the live API while continuing to pass the mocked
+  test suite that used pre-rename fixtures.
+
+  The fix introduces a small alias layer in `propertyRegistry`:
+  - `PROPERTY_ALIASES` maps legacy → current names.
+  - `propertiesForPubChem(requested)` translates aliases at the URL boundary
+    and deduplicates so requesting both `CanonicalSMILES` and
+    `ConnectivitySMILES` does not duplicate on the wire.
+  - `readPropertyValue(row, requested)` reads under the current wire name
+    first and falls back to the legacy name (in either direction) so that
+    cached fixtures and old responses continue to work.
+
+  Public API contract is preserved:
+  - `NormalizedCompound.canonicalSmiles` reads
+    `ConnectivitySMILES ?? CanonicalSMILES`.
+  - `NormalizedCompound.isomericSmiles` reads `SMILES ?? IsomericSMILES`.
+  - `get_compound_properties` still validates legacy names and returns the
+    requested key in the output row, populated from PubChem's current
+    response key when needed.
+  - `get_compound_structure({ format: 'smiles' })` continues to return
+    connectivity SMILES (legacy semantics) — no API change.
+
+### Added
+
+- `SMILES` and `ConnectivitySMILES` accepted as supported property names by
+  `get_compound_properties`.
+- Helpers `toPubChemPropertyName`, `propertiesForPubChem`, `readPropertyValue`
+  in `src/pubchem/propertyRegistry.ts`.
+
+### Tests
+
+- Alias validation and wire-name translation tests in
+  `test/unit/pubchem/propertyRegistry.test.ts`.
+- URL-builder translation and deduplication tests in
+  `test/unit/pubchem/pubchemUrls.test.ts`.
+- Current-key and legacy-key fixtures in `test/unit/utils/normalize.test.ts`,
+  plus the full `rowsForProperties` alias matrix.
+- `getStructure({ format: 'smiles' })` regression: mocked response uses
+  `ConnectivitySMILES`; back-compat regression uses legacy `CanonicalSMILES`.
+
 ## [0.1.0] — initial release candidate
 
 ### Added

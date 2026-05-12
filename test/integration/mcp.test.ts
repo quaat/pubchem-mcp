@@ -128,7 +128,9 @@ describe('MCP server end-to-end', () => {
       limits: { rps: number; rpm: number };
       transport: string;
     };
-    expect(payload.version).toBe('0.1.0');
+    // Don't hard-code the version — it's loaded from package.json at runtime
+    // by src/version.ts, so it can shift across releases.
+    expect(payload.version).toMatch(/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/);
     expect(payload.transport).toBe('stdio');
     expect(payload.limits.rps).toBe(4);
   });

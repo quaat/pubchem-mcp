@@ -1,6 +1,6 @@
 {
   "name": "pubchem-mcp",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Production-ready Model Context Protocol server for PubChem chemical data (PUG-REST + PUG-View).",
   "type": "module",
   "license": "MIT",

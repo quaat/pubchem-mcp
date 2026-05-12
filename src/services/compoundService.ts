@@ -15,6 +15,7 @@ import {
 import {
   COMPACT_PROPERTIES,
   DEFAULT_PROPERTIES,
+  readPropertyValue,
   type SupportedProperty,
 } from '../pubchem/propertyRegistry.js';
 import { normalizePropertyTable, type RawPropertyTable } from '../utils/normalize.js';
@@ -180,7 +181,13 @@ export class CompoundService {
     const url = buildCompoundByCidPropertyUrl(urlConfig(this.ctx.config), [cid], [propName]);
     const raw = await this.ctx.rest.getJson<RawPropertyTable>(url);
     const row = raw.PropertyTable?.Properties?.[0];
-    const value = row ? (row[propName] as string | number | undefined) : undefined;
+    // The URL builder translates legacy aliases to PubChem's current wire
+    // names (e.g. CanonicalSMILES → ConnectivitySMILES), and PubChem returns
+    // the value under the current key. `readPropertyValue` handles both
+    // current and legacy keys so we tolerate either response shape.
+    const rawValue = row ? readPropertyValue(row, propName) : undefined;
+    const value =
+      typeof rawValue === 'string' || typeof rawValue === 'number' ? rawValue : undefined;
     if (value === undefined || value === null || value === '') {
       throw new PubChemNotFoundError(`No ${propName} available for CID ${cid}`, {
         endpoint: `compound/cid/property/${propName}`,

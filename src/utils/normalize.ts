@@ -1,6 +1,7 @@
 import {
   publicCompoundUrl,
 } from '../pubchem/pubchemUrls.js';
+import { readPropertyValue } from '../pubchem/propertyRegistry.js';
 import type { NormalizedCompound, PropertyRow } from '../pubchem/pubchemTypes.js';
 
 export interface RawPropertyTable {
@@ -40,6 +41,11 @@ export function normalizeCompoundRow(row: RawProperty): NormalizedCompound | und
   const cidRaw = row.CID;
   const cid = typeof cidRaw === 'number' ? cidRaw : asNumber(cidRaw);
   if (cid === undefined || !Number.isInteger(cid) || cid <= 0) return undefined;
+  // SMILES property names have been renamed by PubChem:
+  //   CanonicalSMILES → ConnectivitySMILES (connectivity-only)
+  //   IsomericSMILES  → SMILES             (stereochemical/isotopic)
+  // Prefer the current keys; fall back to legacy keys for back-compat with
+  // fixtures or cached responses captured before the rename.
   return {
     cid,
     pubchemUrl: publicCompoundUrl(cid),
@@ -47,8 +53,8 @@ export function normalizeCompoundRow(row: RawProperty): NormalizedCompound | und
     iupacName: asString(row.IUPACName),
     molecularFormula: asString(row.MolecularFormula),
     molecularWeight: asNumber(row.MolecularWeight),
-    canonicalSmiles: asString(row.CanonicalSMILES),
-    isomericSmiles: asString(row.IsomericSMILES),
+    canonicalSmiles: asString(readPropertyValue(row, 'CanonicalSMILES')),
+    isomericSmiles: asString(readPropertyValue(row, 'IsomericSMILES')),
     inchi: asString(row.InChI),
     inchiKey: asString(row.InChIKey),
     xlogp: asNumber(row.XLogP),
@@ -64,8 +70,13 @@ export function normalizeCompoundRow(row: RawProperty): NormalizedCompound | und
 
 /**
  * Generic property-row normalizer that preserves only the requested keys.
- * Used by `get_compound_properties` so callers see the exact column set
- * they requested.
+ *
+ * Used by `get_compound_properties` so callers see exactly the column set
+ * they asked for. Legacy property aliases (e.g. `CanonicalSMILES`) are
+ * supported: the response row may carry the value under PubChem's current
+ * name (`ConnectivitySMILES`), and `readPropertyValue` resolves it back to
+ * the requested alias key. Requesting only the current name still works as
+ * well.
  */
 export function rowsForProperties(
   raw: RawPropertyTable,
@@ -79,7 +90,7 @@ export function rowsForProperties(
     if (cid === undefined) continue;
     const props: Record<string, string | number | undefined> = {};
     for (const key of requested) {
-      const v = row[key];
+      const v = readPropertyValue(row, key);
       if (v === undefined || v === null) continue;
       if (typeof v === 'number' || typeof v === 'string') {
         props[key] = v;

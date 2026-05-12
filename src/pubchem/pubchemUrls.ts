@@ -5,6 +5,8 @@
  * All builders return absolute URLs. Identifier values are URL-encoded.
  */
 
+import { propertiesForPubChem } from './propertyRegistry.js';
+
 export const PUBCHEM_PUBLIC_BASE = 'https://pubchem.ncbi.nlm.nih.gov';
 
 export type RestOutputFormat = 'JSON' | 'TXT' | 'SDF' | 'PNG' | 'XML' | 'CSV';
@@ -30,7 +32,12 @@ export function buildCompoundByCidPropertyUrl(
   format: RestOutputFormat = 'JSON',
 ): string {
   if (properties.length === 0) throw new Error('properties must be non-empty');
-  return `${cfg.baseUrl}/compound/cid/${cidList(cids)}/property/${properties.join(',')}/${format}`;
+  // Translate legacy aliases (e.g. CanonicalSMILES → ConnectivitySMILES) to the
+  // names PubChem currently serves and deduplicate after translation so
+  // requesting both legacy and current aliases doesn't repeat the same
+  // PubChem property on the wire.
+  const wireProps = propertiesForPubChem(properties);
+  return `${cfg.baseUrl}/compound/cid/${cidList(cids)}/property/${wireProps.join(',')}/${format}`;
 }
 
 export function buildCompoundByNameCidsUrl(

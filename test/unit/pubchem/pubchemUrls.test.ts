@@ -39,6 +39,26 @@ describe('pubchemUrls', () => {
     expect(() => buildCompoundByCidPropertyUrl(cfg, [1], [])).toThrow();
   });
 
+  it('translates legacy SMILES aliases to current PubChem wire names', () => {
+    const url = buildCompoundByCidPropertyUrl(
+      cfg,
+      [2244],
+      ['CanonicalSMILES', 'IsomericSMILES'],
+    );
+    expect(url).toContain('/property/ConnectivitySMILES,SMILES/');
+    expect(url).not.toMatch(/CanonicalSMILES|IsomericSMILES/);
+  });
+
+  it('dedupes after alias translation', () => {
+    // Both expand to ConnectivitySMILES → must appear only once.
+    const url = buildCompoundByCidPropertyUrl(
+      cfg,
+      [2244],
+      ['MolecularFormula', 'CanonicalSMILES', 'ConnectivitySMILES'],
+    );
+    expect(url).toMatch(/\/property\/MolecularFormula,ConnectivitySMILES\//);
+  });
+
   it('URL-encodes name/SMILES/InChIKey inputs', () => {
     expect(buildCompoundByNameCidsUrl(cfg, 'acetylsalicylic acid')).toContain(
       'acetylsalicylic%20acid',

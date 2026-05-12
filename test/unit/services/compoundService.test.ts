@@ -179,11 +179,15 @@ describe('CompoundService.getCompound', () => {
 });
 
 describe('CompoundService.getStructure', () => {
-  it('returns SMILES via the property endpoint', async () => {
+  it('returns connectivity SMILES via the property endpoint (current PubChem wire name)', async () => {
+    // PubChem renamed CanonicalSMILES → ConnectivitySMILES. The URL builder
+    // translates the request and PubChem responds under the current key.
     server.use(
-      http.get(`${TEST_BASE}/compound/cid/2244/property/CanonicalSMILES/JSON`, () =>
+      http.get(`${TEST_BASE}/compound/cid/2244/property/ConnectivitySMILES/JSON`, () =>
         HttpResponse.json({
-          PropertyTable: { Properties: [{ CID: 2244, CanonicalSMILES: 'CC(=O)OC1=CC=CC=C1C(=O)O' }] },
+          PropertyTable: {
+            Properties: [{ CID: 2244, ConnectivitySMILES: 'CC(=O)OC1=CC=CC=C1C(=O)O' }],
+          },
         }),
       ),
     );
@@ -191,6 +195,25 @@ describe('CompoundService.getStructure', () => {
     const r = await svc.getStructure({ cid: 2244, format: 'smiles' });
     expect(r.content).toBe('CC(=O)OC1=CC=CC=C1C(=O)O');
     expect(r.contentType).toBe('text/plain');
+  });
+
+  it('tolerates legacy CanonicalSMILES key in the response (back-compat regression)', async () => {
+    // Some pre-rename fixtures and caches still carry CanonicalSMILES. The
+    // wire request always uses ConnectivitySMILES (the URL builder translates);
+    // the response reader falls back to the legacy key if the new one is
+    // missing.
+    server.use(
+      http.get(`${TEST_BASE}/compound/cid/2244/property/ConnectivitySMILES/JSON`, () =>
+        HttpResponse.json({
+          PropertyTable: {
+            Properties: [{ CID: 2244, CanonicalSMILES: 'CC(=O)OC1=CC=CC=C1C(=O)O' }],
+          },
+        }),
+      ),
+    );
+    const svc = new CompoundService(makeServiceContext());
+    const r = await svc.getStructure({ cid: 2244, format: 'smiles' });
+    expect(r.content).toBe('CC(=O)OC1=CC=CC=C1C(=O)O');
   });
 
   it('bounds full-JSON record responses and flags truncation', async () => {
